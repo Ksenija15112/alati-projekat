@@ -5,6 +5,7 @@ type Config struct{
 	Verzija string
 	Parametri []Parametar
 	ListaLabela []Labela
+	ID string
 }
 
 type Parametar struct{

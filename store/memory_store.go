@@ -5,6 +5,7 @@ import "errors"
 
 type Store struct{
 	listaKonfiguracija []models.Config
+	listaGrupa []models.KonfiguracionaGrupa
 }
 
 func(s *Store) DodavanjeConfig(novi models.Config)error{
@@ -59,5 +60,5 @@ func(s *Store) FindByNazivIVerzija(Naziv,Verzija string)(models.Config,error){
            return v,nil
 		}
 	}
-	return models.Config{},errors.New("nije pronadjena onfiguracija sa tim nazivom i verzijom")
+	return models.Config{},errors.New("nije pronadjena konfiguracija sa tim nazivom i verzijom")
 }

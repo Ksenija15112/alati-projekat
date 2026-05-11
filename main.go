@@ -12,9 +12,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"fmt"
-	"alati-projekat/handler"
-
 )
 
 const serverAddress = ":8080"

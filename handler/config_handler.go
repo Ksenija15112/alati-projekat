@@ -2,28 +2,222 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
+	"strings"
+
+	"alati-projekat/models"
+	"alati-projekat/store"
 )
 
+var s = &store.Store{}
+
+func writeJSON(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
 func Health(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "API radi")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "OK"})
 }
 
-type Config struct {
-	Name    string            `json:"name"`
-	Version string            `json:"version"`
-	Params  map[string]string `json:"params"`
+func ConfigsHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		createConfig(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
-func CreateConfig(w http.ResponseWriter, r *http.Request) {
+func ConfigByIDHandler(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/configs/")
+	parts := strings.Split(path, "/")
 
-	var c Config
-	err := json.NewDecoder(r.Body).Decode(&c)
-	if err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if len(parts) < 2 {
+		http.Error(w, "Potrebni su naziv i verzija", http.StatusBadRequest)
 		return
 	}
 
-	fmt.Fprintln(w, "C primljen")
+	naziv := parts[0]
+	verzija := parts[1]
+
+	switch r.Method {
+	case http.MethodGet:
+		getConfig(w, r, naziv, verzija)
+	case http.MethodDelete:
+		deleteConfig(w, r, naziv, verzija)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func createConfig(w http.ResponseWriter, r *http.Request) {
+	var c models.Config
+	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+		http.Error(w, "Neispravan JSON", http.StatusBadRequest)
+		return
+	}
+	if c.Naziv == "" || c.Verzija == "" {
+		http.Error(w, "Naziv i verzija su obavezni", http.StatusBadRequest)
+		return
+	}
+	err := s.DodavanjeConfig(c)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, http.StatusCreated, c)
+}
+
+func getConfig(w http.ResponseWriter, r *http.Request, naziv, verzija string) {
+	c, err := s.FindByNazivIVerzija(naziv, verzija)
+	if err != nil {
+		http.Error(w, "Konfiguracija nije pronađena", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
+func deleteConfig(w http.ResponseWriter, r *http.Request, naziv, verzija string) {
+	c, err := s.FindByNazivIVerzija(naziv, verzija)
+	if err != nil {
+		http.Error(w, "Konfiguracija nije pronađena", http.StatusNotFound)
+		return
+	}
+	err = s.Delete(c.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func ConfigGroupsHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		createGroup(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func ConfigGroupByIDHandler(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/config-groups/")
+	path = strings.Trim(path, "/")
+	parts := strings.Split(path, "/")
+
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "Nedostaje naziv grupe", http.StatusBadRequest)
+		return
+	}
+
+	if len(parts) == 2 {
+		naziv := parts[0]
+		verzija := parts[1]
+		switch r.Method {
+		case http.MethodGet:
+			getGroup(w, r, naziv, verzija)
+		case http.MethodDelete:
+			deleteGroup(w, r, naziv, verzija)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	if len(parts) == 3 && parts[2] == "configs" {
+		naziv := parts[0]
+		verzija := parts[1]
+		switch r.Method {
+		case http.MethodPut:
+			addConfigToGroup(w, r, naziv, verzija)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	if len(parts) == 4 && parts[2] == "configs" {
+		naziv := parts[0]
+		verzija := parts[1]
+		configNaziv := parts[3]
+		switch r.Method {
+		case http.MethodDelete:
+			removeConfigFromGroup(w, r, naziv, verzija, configNaziv)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
+func createGroup(w http.ResponseWriter, r *http.Request) {
+	var g models.KonfiguracionaGrupa
+	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
+		http.Error(w, "Neispravan JSON", http.StatusBadRequest)
+		return
+	}
+	if g.Naziv == "" || g.Verzija == "" {
+		http.Error(w, "Naziv i verzija su obavezni", http.StatusBadRequest)
+		return
+	}
+	err := s.DodavanjeGrupe(g)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, http.StatusCreated, g)
+}
+
+func getGroup(w http.ResponseWriter, r *http.Request, naziv, verzija string) {
+	g, err := s.FindGrupaByNazivIVerzija(naziv, verzija)
+	if err != nil {
+		http.Error(w, "Grupa nije pronađena", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
+}
+
+func deleteGroup(w http.ResponseWriter, r *http.Request, naziv, verzija string) {
+	g, err := s.FindGrupaByNazivIVerzija(naziv, verzija)
+	if err != nil {
+		http.Error(w, "Grupa nije pronađena", http.StatusNotFound)
+		return
+	}
+	err = s.DeleteGrupa(g.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func addConfigToGroup(w http.ResponseWriter, r *http.Request, naziv, verzija string) {
+	var c models.Config
+	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
+		http.Error(w, "Neispravan JSON", http.StatusBadRequest)
+		return
+	}
+	err := s.DodavanjeConfigUGrupu(naziv, verzija, c)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func removeConfigFromGroup(w http.ResponseWriter, r *http.Request, naziv, verzija, configNaziv string) {
+	err := s.UklanjranjeConfigIzGrupe(naziv, verzija, configNaziv)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
